@@ -1,5 +1,5 @@
 script_name("InfoAuction")
-script_version("2.1")
+script_version("2.2")
 script_author("Rezbirp")
 script_dependencies("mimgui; samp events; fAwesome6")
 
@@ -27,6 +27,7 @@ u8 = encoding.UTF8
 
 local renderWindowMap = imgui.new.bool(false)
 local renderWindowSettings = imgui.new.bool(false)
+local renderWindowLeftInfo = imgui.new.bool(false)
 local Search = imgui.new.char[128]('')
 
 local sw, sh = getScreenResolution()
@@ -53,6 +54,8 @@ local colorHovered = imgui.ImVec4(1.00, 0.98, 0.29, 1)
 
 local settings = {}
 
+local businessHoveredInLeftInfo = -1
+local houseHoveredInLeftInfo = -1
 
 function apply_custom_style() -- https://www.blast.hk/threads/25442/page-2#post-644677
     imgui.SwitchContext()
@@ -178,13 +181,16 @@ function main()
 	
 	addEventHandler('onWindowMessage', function(msg, wparam, lparam)
 				if wparam == 27 then
-					if renderWindowMap[0] or renderWindowSettings[0] then
+					if renderWindowMap[0] then
 						if msg == 0x0100 then
 							consumeWindowMessage(true, false)
 						end
 						if msg == 0x0101 then
 							renderWindowMap[0] = false
 							renderWindowSettings[0] = false
+							renderWindowLeftInfo[0] = false
+							houseHoveredInLeftInfo = -1
+							businessHoveredInLeftInfo = -1
 							infoHouse=nil
 							infoBusiness=nil
 						end
@@ -200,14 +206,13 @@ function main()
 			sampCloseCurrentDialogWithButton(0)
 		end
 		
-			
 		
 		
 	end
 end
 	
 function localChatMessageScript(text)
-	sampAddChatMessage("[InfoAuction v2.1]: {FFFAFA}"..text, 0xae2121)
+	sampAddChatMessage("[InfoAuction v2.2]: {FFFAFA}"..text, 0xae2121)
 end
 
 function sampev.onShowDialog(dialogId, style, title, button1, button2, text)
@@ -357,7 +362,13 @@ function imgui.Icon(id, x, y, text,icon, color, isBusiness)
 
 		imgui.SetCursorPosX(startPosX + x-10)
 		imgui.SetCursorPosY(startPosY + y-7)
+		if (isBusiness and businessHoveredInLeftInfo == id) or (not isBusiness and houseHoveredInLeftInfo == id) then
+			imgui.SetCursorPos(imgui.ImVec2(imgui.GetCursorPosX()-7, imgui.GetCursorPosY()-7))
+			currentColor = imgui.ImVec4(0, 1, 0,1)
+			imgui.SetWindowFontScale(2.0)
+		end
 		imgui.TextColored(currentColor, icon)
+		imgui.SetWindowFontScale(1.0)
 	end
 end
 
@@ -635,7 +646,11 @@ local newFrameSettings = imgui.OnFrame(
 	function() return renderWindowSettings[0] end,
 	function(player)
 		imgui.SetNextWindowSize(imgui.ImVec2(330, imguiWindowSize), imgui.Cond.FirstUseEver)
-		imgui.SetNextWindowPos(imgui.ImVec2((sw/2+imguiWindowSize/2)-165, (sh*0.05)/2), imgui.Cond.FirstUseEver)
+		
+		local posWndX = (sw/2+imguiWindowSize/2)
+		local posWndX = (renderWindowSettings[0] and not renderWindowLeftInfo[0]) and posWndX - 165 or posWndX
+		imgui.SetNextWindowPos(imgui.ImVec2(posWndX, (sh*0.05)/2))
+		
 		imgui.Begin("Settings##Bgn",renderWindowSettings, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoMove)
 		if imgui.Button(fa.MAP .. " Map", imgui.ImVec2(150, 20)) then
 			menu = 0
@@ -710,12 +725,16 @@ local newFrameSettings = imgui.OnFrame(
 local newFrameMap = imgui.OnFrame(
     function() return renderWindowMap[0] end,
 	function(player)
-		local posWndX = sw/2
-		if renderWindowSettings[0] then
-			posWndX = posWndX - 165
-		end
 		imgui.SetNextWindowSize(imgui.ImVec2(imguiWindowSize, imguiWindowSize), imgui.Cond.FirstUseEver)
+		
+		local posWndX = sw/2
+		if renderWindowSettings[0] and not renderWindowLeftInfo[0] then
+			posWndX = posWndX - 165
+		elseif renderWindowLeftInfo[0] and not renderWindowSettings[0] then
+			posWndX = posWndX + 160
+		end
 		imgui.SetNextWindowPos(imgui.ImVec2(posWndX, (sh/2)), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+		
 		imgui.Begin("MAP##Bgn",renderWindowMap, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoMove)
 			startPosX = imgui.GetCursorPosX()
 			startPosY = imgui.GetCursorPosY()
@@ -773,6 +792,102 @@ local newFrameMap = imgui.OnFrame(
 			if imgui.Button(fa.GEAR .. "##settingsbtn", imgui.ImVec2(20, 20)) then	
 				renderWindowSettings[0] = not renderWindowSettings[0]
 			end
+			
+			--leftInfoPanel
+			imgui.SetCursorPos(imgui.ImVec2(startPosX, startPosY))
+			if imgui.Button(fa.BARS_STAGGERED .. "##left info panel", imgui.ImVec2(20, 20)) then
+				renderWindowLeftInfo[0] = not renderWindowLeftInfo[0]
+			end
 		imgui.End()
 	end
 )
+local newFrameMap = imgui.OnFrame(
+    function() return renderWindowLeftInfo[0] end,
+	function(player)
+		imgui.SetNextWindowSize(imgui.ImVec2(320, imguiWindowSize),imgui.Cond.FirstUseEver)
+		
+		local posWndX = sw/2 - (imguiWindowSize/2 + 160)
+		local posWndX = (renderWindowSettings[0] and renderWindowLeftInfo[0]) and posWndX-160 or posWndX
+		imgui.SetNextWindowPos(imgui.ImVec2(posWndX, (sh*0.05)/2))
+		
+		imgui.Begin("LeftInfo#bgn", renderWindowLeftInfo, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoMove)
+		
+		local isHoveredHouse = false
+		if infoHouse ~= nil and imgui.TreeNodeStr("House") then
+			for i =1, #infoHouse do
+				 if imgui.LeftInfoBodyTreeNode(i, true) then
+					isHoveredHouse=true
+					houseHoveredInLeftInfo = infoHouse[i]["id"]
+				end
+				if not isHoveredHouse and i == #infoHouse then
+					houseHoveredInLeftInfo = -1
+				end
+			end
+			imgui.TreePop()
+		else
+			houseHoveredInLeftInfo = -1
+		end
+		
+		imgui.Spacing()
+		
+		local isHoveredBiz = false
+		if infoBusiness ~= nil and imgui.TreeNodeStr("Business") then
+			for i =1, #infoBusiness do
+				if imgui.LeftInfoBodyTreeNode(i) then
+					isHoveredBiz=true
+					businessHoveredInLeftInfo = infoBusiness[i]["id"]
+				end
+				if not isHoveredBiz and i == #infoBusiness then
+					businessHoveredInLeftInfo = -1
+				end
+			end
+			imgui.TreePop()
+		else
+			businessHoveredInLeftInfo = -1
+		end
+		
+		imgui.End()
+	end
+	
+)
+
+function imgui.LeftInfoBodyTreeNode(id, isHouse)
+	local result = false
+		
+		local text = isHouse and "Дом: " or "Бизнес: "
+		local tmpId = isHouse and infoHouse[id]["id"] or infoBusiness[id]["id"]
+		local timeToEnd = isHouse and infoHouse[id]["timeToEnd"] or infoBusiness[id]["timeToEnd"]
+		local currentCost = isHouse and infoHouse[id]["currentCost"] or infoBusiness[id]["currentCost"]
+		local typeMoney = isHouse and infoHouse[id]["typeMoney"] or infoBusiness[id]["typeMoney"]
+		
+		imgui.BeginGroup()
+		
+			imgui.Spacing()
+			
+			local x, y = imgui.GetCursorPosX(), imgui.GetCursorPosY()
+			
+			
+			--itemHovered
+			local pos = imgui.GetCursorScreenPos()
+			local colorBtnIcon = imgui.GetStyle().Colors[imgui.Col.WindowBg]
+			imgui.SetCursorPos(imgui.ImVec2(x,y-2))
+			imgui.InvisibleButton(id .. "leftInfo" .. (isHouse and "house" or "business"), imgui.ImVec2(320,22))
+			if imgui.IsItemHovered() then
+				colorBtnIcon = imgui.ImVec4(0.2,0.25,0.27,1)
+				result = true
+			end
+
+			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(pos.x, pos.y-2), imgui.ImVec2(pos.x + 320, pos.y+22), imgui.ColorConvertFloat4ToU32(colorBtnIcon))
+			--end
+			
+			imgui.SetCursorPos(imgui.ImVec2(x,y))
+			imgui.Text(u8(text)..tmpId)
+			imgui.SetCursorPos(imgui.ImVec2(x+85, y))
+			imgui.Text(timeToEnd)
+			imgui.SetCursorPos(imgui.ImVec2(x+150, y))
+			imgui.Text(dotsInMoney(currentCost) .." ".. typeMoney)
+			
+		imgui.EndGroup()
+		return result
+end
+
