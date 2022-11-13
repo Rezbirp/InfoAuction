@@ -28,6 +28,11 @@ u8 = encoding.UTF8
 local renderWindowMap = imgui.new.bool(false)
 local renderWindowSettings = imgui.new.bool(false)
 local renderWindowLeftInfo = imgui.new.bool(false)
+
+local checkBoxIa = imgui.new.bool(false)
+
+local iatest = false
+
 local Search = imgui.new.char[128]('')
 
 local sw, sh = getScreenResolution()
@@ -206,8 +211,9 @@ function main()
 			sampCloseCurrentDialogWithButton(0)
 		end
 		
-		
-		
+		if testCheat('iatest') then
+			iatest = not iatest
+		end
 	end
 end
 	
@@ -253,13 +259,16 @@ function dialogInfoAuction(lines)
 		if(line:find("^Бизнес")) then
 			line = string.gsub(line, "%$", " $")
 		end
-		result[#result+1] = {id, timeToEnd, currentCost, minUpBid, typeMoney}
 		if(line:find("^Бизнес №(%d-) (.-) (%d-) .- (%d-) (.-)$")) then
+			result[#result+1] = {id, timeToEnd, currentCost, minUpBid, typeMoney}
 			result[#result].id, result[#result].timeToEnd, result[#result].currentCost, result[#result].minUpBid, result[#result].typeMoney = line:match("^Бизнес №(%d-) (.-) (%d-) .- (%d-) (.-)$")
 			result[#result].id = tonumber(result[#result].id)
-		elseif (line:find("^Дом №(%d-) (.-) .-(%d-) (.-)(%d-)$")) then
-			result[#result].id, result[#result].timeToEnd, result[#result].currentCost, result[#result].typeMoney, result[#result].minUpBid = line:match("^Дом №(%d-) (.-) .-(%d-) (.-)(%d-)$")
+		elseif (line:find("^Дом №(%d-) (.-) .-(%d-) (%d-)%s-(.-)$")) then
+			result[#result+1] = {id, timeToEnd, currentCost, minUpBid, typeMoney}
+			result[#result].id, result[#result].timeToEnd, result[#result].currentCost, result[#result].minUpBid, result[#result].typeMoney = line:match("^Дом №(%d-) (.-) .-(%d-) (%d-)%s-([BTC%$]-)$")
+			result[#result]["typeMoney"] = string.gsub(result[#result]["typeMoney"], " ", "")
 			result[#result].id = tonumber(result[#result].id)
+			print(result[#result].minUpBid)
 		else
 			localChatMessageScript(line)
 			localChatMessageScript("Ошибка парсинга диалога. Свяжитесь с автором.")
@@ -633,6 +642,34 @@ function imgui.MenuSettingIcon(stngIcon, selectIcon)
 			
 end
 
+local iatestId = imgui.new.char[128]('')
+local iaTestPrintIcon = false
+local iatestX = -1
+local iatestY = -1
+local iatestid =-1
+function imgui.Iatest()
+	imgui.BeginGroup()
+	imgui.Checkbox("isHouse", checkBoxIa)
+	imgui.InputText("##iatest",iatestId, ffi.sizeof(iatestId))
+	
+
+
+	if imgui.Button("Search##iatest") then
+		iatestid = tonumber(ffi.string(iatestId))
+		if checkBoxIa[0] then
+			iatestX = houseIni[iatestid].x
+			iatestY = houseIni[iatestid].y
+		else
+			iatestX = businessIni[iatestid].x
+			iatestY = businessIni[iatestid].y
+		end
+		iaTestPrintIcon = true
+	end
+	if iaTestPrintIcon then
+		imgui.Icon(iatestid, iatestX, iatestY, "test" .. iatestid, fa.GEAR, imgui.ImVec4(1,0,0,1), not checkBoxIa[0])
+	end
+	imgui.EndGroup()
+end
 
 
 local menu = 0
@@ -787,6 +824,11 @@ local newFrameMap = imgui.OnFrame(
 				end
 			end
 			
+			--Check icon in map
+			if iatest then
+				imgui.SetCursorPos(imgui.ImVec2(imguiWindowSize-135, imguiWindowSize-80))		
+				imgui.Iatest()
+			end
 			--settings
 			imgui.SetCursorPos(imgui.ImVec2(startPosX+(imguiWindowSize-35), startPosY))
 			if imgui.Button(fa.GEAR .. "##settingsbtn", imgui.ImVec2(20, 20)) then	
