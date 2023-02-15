@@ -1,7 +1,7 @@
 script_name("InfoAuction")
-script_version("2.2")
+script_version("2.3.1")
 script_author("Rezbirp")
-script_dependencies("mimgui; samp events; fAwesome6")
+script_dependencies("mimgui; samp events; fAwesome6; LuaSocket; ssl.https; cjson; ltn12")
 
 --[[
 Contact me:
@@ -21,6 +21,12 @@ local inicfg = require 'inicfg'
 local fa = require 'fAwesome6_solid'
 local ffi = require 'ffi'
 
+------------------
+local cjson = require("cjson")
+local https = require("ssl.https")
+local ltn12 = require("ltn12")
+------------------
+
 local encoding = require 'encoding'
 encoding.default = 'CP1251'
 u8 = encoding.UTF8
@@ -28,11 +34,6 @@ u8 = encoding.UTF8
 local renderWindowMap = imgui.new.bool(false)
 local renderWindowSettings = imgui.new.bool(false)
 local renderWindowLeftInfo = imgui.new.bool(false)
-
-local checkBoxIa = imgui.new.bool(false)
-
-local iatest = false
-
 local Search = imgui.new.char[128]('')
 
 local sw, sh = getScreenResolution()
@@ -41,13 +42,14 @@ local imguiImageSize = imguiWindowSize -16
 
 local iconPosScale = imguiImageSize/100
 
-local directIni = "moonloader\\config\\InfoAuction.ini"
-local directIniHouse = "moonloader\\config\\HouseInfo.ini"
-local directIniBusiness = "moonloader\\config\\BizInfo.ini"
+local directIni = "InfoAuction\\config.ini"
+local fullDirectIni = "moonloader\\config\\InfoAuction\\config.ini"
+local directPhoto = "moonloader/resource/images/map.jpg"
+local directToPhoto = "moonloader/resource/images"
 
-local mainIni = inicfg.load(nil, directIni)
-local houseIni = inicfg.load(nil, directIniHouse)
-local businessIni = inicfg.load(nil, directIniBusiness)
+local mainIni = {}
+local houseIni = {}
+local businessIni = {}
 
 local idDialogHouseAuction = 0
 local idDialogBusinessAuction = 0
@@ -58,6 +60,8 @@ local notFoundHouse = {}
 local colorHovered = imgui.ImVec4(1.00, 0.98, 0.29, 1)
 
 local settings = {}
+local nameMyServer
+local serverFinded = true
 
 local businessHoveredInLeftInfo = -1
 local houseHoveredInLeftInfo = -1
@@ -109,80 +113,37 @@ function apply_custom_style() -- https://www.blast.hk/threads/25442/page-2#post-
 	colors[clr.TextSelectedBg]       = ImVec4(0.25, 1.00, 0.00, 0.43)
 end
 
-
-function loadIni()
-	for i = 0,50 do
-		settings[#settings+1] = {name, icon, show = imgui.new.bool(true), a,r,g,b}
-		if mainIni[i]~=nil then
-			if mainIni[i]["name"]~= nil then
-				settings[#settings]["name"] = mainIni[i]["name"]
-			else
-				localChatMessageScript("ID: " .. i .. " name не удалось загрузить.")
-				settings[#settings]["name"] = "NULL"
-			end
-			
-			if mainIni[i]["icon"] ~= nil then
-				settings[#settings]["icon"] = mainIni[i]["icon"]
-			else
-				localChatMessageScript("ID: " .. i .. " icon не удалось загрузить.")
-				settings[#settings]["icon"] = fa.CIRCLE_QUESTION
-			end
-			
-			if mainIni[i]["a"]~=nil then
-				settings[#settings]["a"] = mainIni[i]["a"]
-			else
-				localChatMessageScript("ID: " .. i .. " a не удалось загрузить.")
-				settings[#settings]["a"] = 1
-			end
-			
-			if mainIni[i]["r"]~=nil then
-				settings[#settings]["r"] = mainIni[i]["r"]
-			else
-				localChatMessageScript("ID: " .. i .. " r не удалось загрузить.")
-				settings[#settings]["r"] = 1
-			end
-			
-			if mainIni[i]["g"] ~=nil then
-				settings[#settings]["g"] = mainIni[i]["g"]
-			else
-				localChatMessageScript("ID: " .. i .. " g не удалось загрузить.")
-				settings[#settings]["g"] = 0
-			end
-			
-			if mainIni[i]["b"]~=nil then
-				settings[#settings]["b"] = mainIni[i]["b"]
-			else
-				localChatMessageScript("ID: " .. i .. " b не удалось загрузить.")
-				settings[#settings]["b"] = 0
-			end
-			
-			if mainIni[i]["show"] ~=nil then
-				settings[#settings]["show"][0] = mainIni[i]["show"]
-			else
-				localChatMessageScript("ID: " .. i .. " show не удалось загрузить.")
-				settings[#settings]["show"][0] = true
-			end
-			
-		else
-			localChatMessageScript("ID: " .. i .. " ALL не удалось загрузить.")
-			settings[#settings]["name"] = "NULL"
-			settings[#settings]["icon"] = fa.CIRCLE_QUESTION
-			settings[#settings]["a"] = 1
-			settings[#settings]["r"] = 1
-			settings[#settings]["g"] = 0
-			settings[#settings]["b"] = 0
-			settings[#settings]["show"][0] = true
-		end
-	end
-end
-
-
 function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
 	while not isSampAvailable() do wait(100) end
 	
 	localChatMessageScript("Запущен!")
-	loadIni()
+	
+	local ip, _ = sampGetCurrentServerAddress()
+	
+	
+	--GET name server
+	----------------
+	local dataAllServer = https.request("https://arizona-ping.react.group/desktop/ping/Arizona/ping.json")
+	local parsedAllServer = cjson.decode(dataAllServer)
+	
+	for i, querys in ipairs(parsedAllServer.query) do
+		if querys.ip == ip then
+			nameMyServer = querys.name
+		end
+	end
+	if nameMyServer == nil then
+		serverFinded = false
+		localChatMessageScript("Не удалось распознать сервер. Используйте команду: /iauction [название сервера]")
+	else
+		localChatMessageScript("Сервер определён как: {FFFFE0}\"" .. nameMyServer.."\"")
+		if not createAllConfig(nameMyServer) then
+			localChatMessageScript("Не удалось найти информацию, о домах и бизнесах на этом сервере.")
+			localChatMessageScript("Свяжитесь с автором. Discord: Evgen#1915, TG\\VK: @Rezbirp")
+		end
+	end
+	
+	sampRegisterChatCommand("iauction", cmdIauction)
 	
 	addEventHandler('onWindowMessage', function(msg, wparam, lparam)
 				if wparam == 27 then
@@ -202,33 +163,158 @@ function main()
 					end
 				end
     end)
-	
+	local f = io.open(directPhoto, "r")
+	if not f then
+		downloadImage()
+	else
+		io.close(f)
+	end
 	
 	while true do
 		wait(0)
 		--Закрыл таким способом, что-бы не было бага в textdraw'е
-		if sampIsDialogActive() and (sampGetDialogCaption() == "{BFBBBA}Дома на аукционе" or sampGetDialogCaption() == "{BFBBBA}Бизнесы на аукционе") and (sampGetCurrentDialogId() == idDialogHouseAuction or sampGetCurrentDialogId() == idDialogBusinessAuction) then
+		if sampIsDialogActive() and (sampGetDialogCaption() == "{BFBBBA}Дома на аукционе" or sampGetDialogCaption() == "{BFBBBA}Бизнесы на аукционе") and (sampGetCurrentDialogId() == idDialogHouseAuction or sampGetCurrentDialogId() == idDialogBusinessAuction) and serverFinded then
 			sampCloseCurrentDialogWithButton(0)
-		end
-		
-		if testCheat('iatest') then
-			iatest = not iatest
 		end
 	end
 end
+
+function downloadImage()
+
+	if not doesDirectoryExist(directToPhoto) then
+		createDirectory(directToPhoto)
+	end
+
+	local file = io.open(directPhoto, "wb")
+	https.request{
+		url = "https://i.imgur.com/qSy1UJ2.jpg",
+		sink = ltn12.sink.file(file)
+	}
+	file = nil
+end
+
+function checkServerName(nameServer)
+	nameServer = string.gsub(string.lower(nameServer), " ", "-")
+	local data = https.request("https://arz.deno.dev/tools/map/"..nameServer)
+	local parsed = cjson.decode(data)
+	return parsed["ok"], parsed
+end
+
+
+
+function createMainSetings(parsed)
+	local f = io.open(fullDirectIni, "r")
+	if not f then
+		mainIni = {}
+		
+		mainIni[0] = {icon = fa.CIRCLE_QUESTION, a = 1, r = 1, g = 0, b = 0, show = true, name = u8"Дом"}
+		for i, business in ipairs(parsed.map.businesses) do
+			local nameBiz = u8:decode(business.name)
+			for j = 0, #mainIni do 
+				if mainIni[j].name == u8(nameBiz) then
+					break
+				end
+				
+				if j == #mainIni then
+					mainIni[#mainIni+1] = {icon = fa.CIRCLE_QUESTION, a = 1, r = 1, g = 0, b = 0, show = true, name = u8(nameBiz)}
+				end
+				
+			end
+		end
+		
+		if inicfg.save(mainIni, directIni) then
+			localChatMessageScript("Создан новый конфиг.")
+			localChatMessageScript("Советуем его настроить: кнопка сверху справа (на карте).")
+		end
+		
+	else
+		mainIni = inicfg.load(nil, directIni)
+		io.close(f)
+	end
+end
+
+
+function createSettings()
+	for i = 0, #mainIni do
+		settings[i] = {icon = mainIni[i]["icon"],a = mainIni[i]["a"], r = mainIni[i]["r"],g = mainIni[i]["g"], b = mainIni[i]["b"], show = imgui.new.bool(mainIni[i]["show"]), name = mainIni[i]["name"]}
+	end
+end
+
+
+function createHouseIni(parsed)
 	
+	
+	for i, house in ipairs(parsed.map.houses) do
+		houseIni[house.id-1] = {x = house.x, y = house.y}
+	end
+	
+end
+
+function createBussinessIni(parsed)
+
+	local tempConfigToTestIdBiz = {}
+	for i = 1, #mainIni do
+		tempConfigToTestIdBiz[mainIni[i].name] = i;
+	end
+	
+	parsed.map.businesses[#parsed.map.businesses+1] = {id = 242, name = u8"Нефтевышка", x = 60.48, y = 0.5}
+	parsed.map.businesses[#parsed.map.businesses+1] = {id = 245, name = u8"Нефтевышка", x = 0.5, y = 54.08}
+	parsed.map.businesses[#parsed.map.businesses+1] = {id = 247, name = u8"Нефтевышка", x = 99.5, y = 54.72}
+	parsed.map.businesses[#parsed.map.businesses+1] = {id = 248, name = u8"Нефтевышка", x = 52.2, y = 0.5}
+	parsed.map.businesses[#parsed.map.businesses+1] = {id = 249, name = u8"Нефтевышка", x = 32.16, y = 98.5}
+	
+	for i, business in ipairs(parsed.map.businesses) do
+		if tempConfigToTestIdBiz[business.name] ~=nil then
+			businessIni[business.id-1] = {x = business.x, y = business.y, type = tempConfigToTestIdBiz[business.name]}
+		else
+			mainIni[#mainIni+1] = {icon = fa.CIRCLE_QUESTION, a = 1, r = 1, g = 0, b = 0, show = true, name = business.name}
+			businessIni[business.id-1] = {x = business.x, y = business.y, type = #mainIni}
+			tempConfigToTestIdBiz[mainIni[#mainIni]["name"]] = #mainIni
+		end
+		inicfg.save(mainIni, directIni)
+	end
+
+end
+
+function createAllConfig(nameServer)
+	local ok, data = checkServerName(nameServer)
+	if ok then
+		createMainSetings(data)
+		createHouseIni(data)
+		createBussinessIni(data)
+		createSettings()
+		serverFinded = true
+		return true
+	end
+	return false
+end
+
+function cmdIauction(arg)
+	if arg~="" then
+		if createAllConfig(arg) then
+			localChatMessageScript("{7CFC00}Удалось {FFFFFF}создать конфиг для: \"" .. arg.."\"")
+		else
+			localChatMessageScript("{FF0000}Не удалось {FFFFFF}создать конфиг для: \"" .. arg .. "\"")
+		end
+end
+end
+
 function localChatMessageScript(text)
-	sampAddChatMessage("[InfoAuction v2.2]: {FFFAFA}"..text, 0xae2121)
+	sampAddChatMessage("[InfoAuction v".. thisScript().version .."]: {FFFAFA}"..text, 0xae2121)
 end
 
 function sampev.onShowDialog(dialogId, style, title, button1, button2, text)
-	if(dialogId == idDialogHouseAuction and title == "{BFBBBA}Дома на аукционе") then
-		renderWindowMap[0] = true
-		infoHouse = dialogInfoAuction(text)
-	end
-	if(dialogId == idDialogBusinessAuction and title == "{BFBBBA}Бизнесы на аукционе") then
-		renderWindowMap[0] = true
-		infoBusiness = dialogInfoAuction(text)
+	if serverFinded then
+		if(dialogId == idDialogHouseAuction and title == "{BFBBBA}Дома на аукционе") then
+			renderWindowMap[0] = true
+			infoHouse = dialogInfoAuction(text)
+			functionSortId(0)
+		end
+		if(dialogId == idDialogBusinessAuction and title == "{BFBBBA}Бизнесы на аукционе") then
+			renderWindowMap[0] = true
+			infoBusiness = dialogInfoAuction(text)
+			functionSortId(0)
+		end
 	end
 end
 
@@ -255,20 +341,12 @@ function dialogInfoAuction(lines)
 			goto continue
 		end
 		
-		line = string.gsub(string.gsub(line,"\t", " "), "%.","")
-		if(line:find("^Бизнес")) then
-			line = string.gsub(line, "%$", " $")
-		end
-		if(line:find("^Бизнес №(%d-) (.-) (%d-) .- (%d-) (.-)$")) then
+		line = string.gsub(string.gsub(string.gsub(line, ",", ""),"\t", " "), "%.","")
+		
+		local type, id, timeToEnd, currentCost, minUpBid, typeMoney = parsedLine(line)
+		if type == 0 or type == 1 then
 			result[#result+1] = {id, timeToEnd, currentCost, minUpBid, typeMoney}
-			result[#result].id, result[#result].timeToEnd, result[#result].currentCost, result[#result].minUpBid, result[#result].typeMoney = line:match("^Бизнес №(%d-) (.-) (%d-) .- (%d-) (.-)$")
-			result[#result].id = tonumber(result[#result].id)
-		elseif (line:find("^Дом №(%d-) (.-) .-(%d-) (%d-)%s-(.-)$")) then
-			result[#result+1] = {id, timeToEnd, currentCost, minUpBid, typeMoney}
-			result[#result].id, result[#result].timeToEnd, result[#result].currentCost, result[#result].minUpBid, result[#result].typeMoney = line:match("^Дом №(%d-) (.-) .-(%d-) (%d-)%s-([BTC%$]-)$")
-			result[#result]["typeMoney"] = string.gsub(result[#result]["typeMoney"], " ", "")
-			result[#result].id = tonumber(result[#result].id)
-			print(result[#result].minUpBid)
+			result[#result]["id"], result[#result]["timeToEnd"], result[#result]["currentCost"], result[#result]["minUpBid"], result[#result]["typeMoney"] = tonumber(id), timeToEnd, currentCost, minUpBid, typeMoney
 		else
 			localChatMessageScript(line)
 			localChatMessageScript("Ошибка парсинга диалога. Свяжитесь с автором.")
@@ -279,7 +357,20 @@ function dialogInfoAuction(lines)
 end
 
 
-
+function parsedLine(line)
+	--type -1 = notFound | 0 = biz |  1 = house
+	
+	local type, id, timeToEnd, currentCost, minUpBid, typeMoney  = -1
+	if line:find("^Бизнес №%d+ (.-) %d+[%$BTCASC]- %d+[%$BTCASC]-$") then
+		type = 0
+		id, timeToEnd, currentCost, minUpBid, typeMoney = line:match("^Бизнес №(%d+) (.-) (%d+)[%$BTCASC]- (%d+)([%$BTCASC]-)$")
+	elseif line:find("^Дом №(%d+) (.-) %$(%d+) (%d+)(%$)$") then
+		--Они снова не поправили баг, с отображением валюты, в диалоге домов :(
+		type = 1
+		id, timeToEnd, currentCost, minUpBid, typeMoney = line:match("^Дом №(%d+) (.-) %$(%d+) (%d+)(%$)$")
+	end
+	return type, id, timeToEnd, currentCost, minUpBid, typeMoney
+end
 
 function notFound(id, house)
 	house = house or false
@@ -296,10 +387,10 @@ function notFound(id, house)
 	
 	if not found and house then
 		notFoundHouse[#notFoundHouse+1] = id
-		localChatMessageScript("Дом " .. id .. " не найден. Свяжитесь с автором.")
+		localChatMessageScript("Дом " .. id .. " не найден.")
 	elseif not found then
 		notFoundBusiness[#notFoundBusiness+1] = id
-		localChatMessageScript("Бизнес " .. id .. " не найден. Свяжитесь с автором.")
+		localChatMessageScript("Бизнес " .. id .. " не найден.")
 	end
 end
 
@@ -336,7 +427,7 @@ end
 imgui.OnInitialize(function()
 	imgui.GetIO().IniFilename = nil
     fa.Init(14)
-	img = imgui.CreateTextureFromFile("moonloader/resource/images/map.jpg")
+	img = imgui.CreateTextureFromFile(directPhoto)
 	apply_custom_style()
 end)
 
@@ -345,8 +436,9 @@ function imgui.Icon(id, x, y, text,icon, color, isBusiness)
 	if (x >= 0 and y >=0) and (x <=100 and y<= 100) then
 		x = x * iconPosScale
 		y = y * iconPosScale
-		imgui.SetCursorPosX(startPosX + x-10)
-		imgui.SetCursorPosY(startPosY + y-7)
+		local cursorPosX, cursorPosY = (startPosX + x-7), (startPosY + y-7)
+		imgui.SetCursorPosX(cursorPosX)
+		imgui.SetCursorPosY(cursorPosY)
 		
 		local idInvisBtn = isBusiness and tostring(id) .. "##biz" or tostring(id) .. ""
 		if imgui.InvisibleButton(idInvisBtn, imgui.ImVec2(imgui.CalcTextSize(icon).x,imgui.CalcTextSize(icon).y)) then
@@ -369,8 +461,8 @@ function imgui.Icon(id, x, y, text,icon, color, isBusiness)
 			currentColor = color
 		end
 
-		imgui.SetCursorPosX(startPosX + x-10)
-		imgui.SetCursorPosY(startPosY + y-7)
+		imgui.SetCursorPosX(cursorPosX)
+		imgui.SetCursorPosY(cursorPosY)
 		if (isBusiness and businessHoveredInLeftInfo == id) or (not isBusiness and houseHoveredInLeftInfo == id) then
 			imgui.SetCursorPos(imgui.ImVec2(imgui.GetCursorPosX()-7, imgui.GetCursorPosY()-7))
 			currentColor = imgui.ImVec4(0, 1, 0,1)
@@ -425,7 +517,7 @@ function imgui.ButtonOpenIconStng(i)
 		imgui.TextColored(imgui.ImVec4(settings[i]["r"], settings[i]["g"], settings[i]["b"], settings[i]["a"]),settings[i]["icon"])
 		imgui.NextColumn()
 		imgui.SetColumnOffset(2, 250)
-		imgui.Text(u8(settings[i]["name"]))
+		imgui.Text(settings[i]["name"])
 		imgui.Columns(1)
 		imgui.EndGroup()
 	return result
@@ -565,7 +657,7 @@ function imgui.TitleExemple(stngIcon, selectIcon)
 			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(pos.x-6, pos.y), imgui.ImVec2(pos.x + 240, pos.y+24), imgui.ColorConvertFloat4ToU32(colorBtnExit))
 			imgui.SetCursorPos(imgui.ImVec2(x, y))
 			imgui.SetColumnOffset(2, 240)
-			imgui.Text(u8(settings[stngIcon]["name"]))
+			imgui.Text(settings[stngIcon]["name"])
 			imgui.NextColumn()
 			
 			
@@ -573,7 +665,7 @@ function imgui.TitleExemple(stngIcon, selectIcon)
 			--set color
 			imgui.SetColumnOffset(3, 285)
 			local color = imgui.new.float[4](settings[stngIcon]["r"], settings[stngIcon]["g"], settings[stngIcon]["b"], settings[stngIcon]["a"])
-			imgui.ColorEdit4(u8(settings[stngIcon]["name"]), color, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel)
+			imgui.ColorEdit4(settings[stngIcon]["name"], color, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel)
 			settings[stngIcon]["r"] = color[0]
 			settings[stngIcon]["g"] = color[1]
 			settings[stngIcon]["b"] = color[2]
@@ -630,7 +722,7 @@ function imgui.MenuSettingIcon(stngIcon, selectIcon)
 			imgui.SetCursorPosY(imgui.GetWindowHeight() - 35)
 			imgui.SetCursorPosX((310 - 200) * 0.5)
 			if imgui.Button(fa.FLOPPY_DISK .. u8" Сохранить", imgui.ImVec2(200, 25)) then
-				mainIni[stngIcon-1] = {name = settings[stngIcon]["name"],icon = settings[stngIcon]["icon"], a = settings[stngIcon]["a"], r = settings[stngIcon]["r"], g = settings[stngIcon]["g"], b = settings[stngIcon]["b"], show = settings[stngIcon]["show"][0]}
+				mainIni[stngIcon] = {name = settings[stngIcon]["name"],icon = settings[stngIcon]["icon"], a = settings[stngIcon]["a"], r = settings[stngIcon]["r"], g = settings[stngIcon]["g"], b = settings[stngIcon]["b"], show = settings[stngIcon]["show"][0]}
 				if inicfg.save(mainIni, directIni) then
 					localChatMessageScript("Сохранено")
 				end
@@ -642,34 +734,6 @@ function imgui.MenuSettingIcon(stngIcon, selectIcon)
 			
 end
 
-local iatestId = imgui.new.char[128]('')
-local iaTestPrintIcon = false
-local iatestX = -1
-local iatestY = -1
-local iatestid =-1
-function imgui.Iatest()
-	imgui.BeginGroup()
-	imgui.Checkbox("isHouse", checkBoxIa)
-	imgui.InputText("##iatest",iatestId, ffi.sizeof(iatestId))
-	
-
-
-	if imgui.Button("Search##iatest") then
-		iatestid = tonumber(ffi.string(iatestId))
-		if checkBoxIa[0] then
-			iatestX = houseIni[iatestid].x
-			iatestY = houseIni[iatestid].y
-		else
-			iatestX = businessIni[iatestid].x
-			iatestY = businessIni[iatestid].y
-		end
-		iaTestPrintIcon = true
-	end
-	if iaTestPrintIcon then
-		imgui.Icon(iatestid, iatestX, iatestY, "test" .. iatestid, fa.GEAR, imgui.ImVec4(1,0,0,1), not checkBoxIa[0])
-	end
-	imgui.EndGroup()
-end
 
 
 local menu = 0
@@ -694,7 +758,7 @@ local newFrameSettings = imgui.OnFrame(
 		end
 		imgui.SameLine()
 		if imgui.Button(fa.CIRCLE_QUESTION .. " Icons##", imgui.ImVec2(150, 20)) then
-			stngIcon=0
+			stngIcon=-1
 			selectIcon=false
 			menu = 1
 		end	
@@ -734,21 +798,19 @@ local newFrameSettings = imgui.OnFrame(
 			imgui.EndTooltip()
 			end
 		--All selection icon
-		elseif menu == 1 and stngIcon == 0 then
+		elseif menu == 1 then
 			imgui.Spacing()
-			if imgui.ButtonOpenIconStng(51) then
-				stngIcon = 51
-			end	
-			for i = 1, 50 do
+			for i = 0, #settings do
 				if imgui.ButtonOpenIconStng(i) then
 					stngIcon = i
+					menu = 2
 				end	
 			end
-		elseif menu == 1 and stngIcon ~= 0 then
+		elseif menu == 2 then
 			
 			local icon, exit = imgui.MenuSettingIcon(stngIcon, selectIcon)
 			if exit then
-				stngIcon = 0
+				menu = 1
 			end
 			if icon then
 				selectIcon = not selectIcon
@@ -795,8 +857,8 @@ local newFrameMap = imgui.OnFrame(
 			if infoHouse~=nil then
 				for i,v in pairs(infoHouse) do
 					if houseIni[v.id] ~= nil and houseIni[v.id].x ~=nil and houseIni[v.id].y ~= nil then
-						if settings[51]["show"][0] then
-							local type = settings[51]
+						if settings[0]["show"][0] then
+							local type = settings[0]
 							local text =u8"Дом №" ..v.id ..u8" | До завершения: "..v.timeToEnd..u8"\nТекущая цена: " .. dotsInMoney(v.currentCost) .." ".. v.typeMoney .. u8" | Мин. ставка: " ..dotsInMoney(v.minUpBid).." "..v.typeMoney
 							local x, y = getPosCity(tonumber(houseIni[v.id].x), tonumber(houseIni[v.id].y),map)
 							imgui.Icon(v.id, x,y, text, type["icon"], imgui.ImVec4(type["r"], type["g"], type["b"], type["a"]), false)
@@ -811,9 +873,9 @@ local newFrameMap = imgui.OnFrame(
 			if infoBusiness ~=nil then
 				for i,v in pairs(infoBusiness) do
 					if businessIni[v.id] ~= nil and businessIni[v.id].x ~= nil and businessIni[v.id].y ~= nil and businessIni[v.id].type ~=nil then
-						if settings[tonumber(businessIni[v.id].type)+1]["show"][0] then
-							local type = settings[tonumber(businessIni[v.id].type)+1]
-							local text = u8"Бизнес №" ..v.id ..u8" | Тип: "..u8(type["name"]).. u8" | До завершения: "..v.timeToEnd..u8"\nТекущая цена: " .. dotsInMoney(v.currentCost) .." ".. v.typeMoney .. u8" | Мин. ставка: " ..dotsInMoney(v.minUpBid).." "..v.typeMoney
+						if settings[tonumber(businessIni[v.id].type)]["show"][0] then
+							local type = settings[tonumber(businessIni[v.id].type)]
+							local text = u8"Бизнес №" ..v.id ..u8" | Тип: "..type["name"].. u8" | До завершения: "..v.timeToEnd..u8"\nТекущая цена: " .. dotsInMoney(v.currentCost) .." ".. v.typeMoney .. u8" | Мин. ставка: " ..dotsInMoney(v.minUpBid).." "..v.typeMoney
 							local x, y = getPosCity(tonumber(businessIni[v.id].x), tonumber(businessIni[v.id].y),map)
 							imgui.Icon(v.id, x,y, text, type["icon"], imgui.ImVec4(type["r"], type["g"], type["b"], type["a"]), true)
 						end
@@ -824,11 +886,6 @@ local newFrameMap = imgui.OnFrame(
 				end
 			end
 			
-			--Check icon in map
-			if iatest then
-				imgui.SetCursorPos(imgui.ImVec2(imguiWindowSize-135, imguiWindowSize-80))		
-				imgui.Iatest()
-			end
 			--settings
 			imgui.SetCursorPos(imgui.ImVec2(startPosX+(imguiWindowSize-35), startPosY))
 			if imgui.Button(fa.GEAR .. "##settingsbtn", imgui.ImVec2(20, 20)) then	
@@ -843,7 +900,17 @@ local newFrameMap = imgui.OnFrame(
 		imgui.End()
 	end
 )
-local newFrameMap = imgui.OnFrame(
+
+--sortID:   0 = nil ||| 1 = id up   ||| 2 = id down
+--sortTime: 0 = nil ||| 1 = time up ||| 2 = time down
+--sortCost: 0 = nil ||| 1 = cost up ||| 2 = cost down
+
+local sortId = 1
+local sortTime = 0
+local sortCost = 0
+
+
+local newFrameLeftInfo = imgui.OnFrame(
     function() return renderWindowLeftInfo[0] end,
 	function(player)
 		imgui.SetNextWindowSize(imgui.ImVec2(320, imguiWindowSize),imgui.Cond.FirstUseEver)
@@ -853,6 +920,24 @@ local newFrameMap = imgui.OnFrame(
 		imgui.SetNextWindowPos(imgui.ImVec2(posWndX, (sh*0.05)/2))
 		
 		imgui.Begin("LeftInfo#bgn", renderWindowLeftInfo, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoMove)
+		
+		if infoHouse ~= nil or infoBusiness ~= nil then
+			imgui.SetCursorPosX(29)
+			if imgui.buttonSort("ID",fa.ARROW_UP, fa.ARROW_DOWN ,sortId, 65) then
+				functionSortId(sortId)
+			end
+			imgui.SameLine()
+			imgui.SetCursorPosX(29 + 85)
+			if imgui.buttonSort("Time",fa.ARROW_UP, fa.ARROW_DOWN ,sortTime, 50) then
+				functionSortTime(sortTime)
+			end
+			imgui.SameLine()
+			imgui.SetCursorPosX(29 + 150)
+			if imgui.buttonSort("Cost",fa.ARROW_UP, fa.ARROW_DOWN ,sortCost, 75) then
+				functionSortCost(sortCost)
+			end
+			
+		end		
 		
 		local isHoveredHouse = false
 		if infoHouse ~= nil and imgui.TreeNodeStr("House") then
@@ -903,7 +988,6 @@ function imgui.LeftInfoBodyTreeNode(id, isHouse)
 		local typeMoney = isHouse and infoHouse[id]["typeMoney"] or infoBusiness[id]["typeMoney"]
 		
 		imgui.BeginGroup()
-		
 			imgui.Spacing()
 			
 			local x, y = imgui.GetCursorPosX(), imgui.GetCursorPosY()
@@ -917,11 +1001,17 @@ function imgui.LeftInfoBodyTreeNode(id, isHouse)
 			if imgui.IsItemHovered() then
 				colorBtnIcon = imgui.ImVec4(0.2,0.25,0.27,1)
 				result = true
+				if not isHouse and businessIni[infoBusiness[id]["id"]]~=nil then
+					imgui.BeginTooltip()
+						imgui.PushTextWrapPos(600)
+							imgui.TextUnformatted(mainIni[businessIni[infoBusiness[id]["id"]]["type"]]["name"])
+						imgui.PopTextWrapPos()
+					imgui.EndTooltip()
+				end
 			end
 
 			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(pos.x, pos.y-2), imgui.ImVec2(pos.x + 320, pos.y+22), imgui.ColorConvertFloat4ToU32(colorBtnIcon))
 			--end
-			
 			imgui.SetCursorPos(imgui.ImVec2(x,y))
 			imgui.Text(u8(text)..tmpId)
 			imgui.SetCursorPos(imgui.ImVec2(x+85, y))
@@ -933,3 +1023,139 @@ function imgui.LeftInfoBodyTreeNode(id, isHouse)
 		return result
 end
 
+
+function imgui.buttonSort(name, icon1, icon2, typeIcon, sizeBtn)
+	local result = false
+	imgui.BeginGroup()
+		if typeIcon == 1 then
+			name = name .. icon1
+		elseif typeIcon == 2 then
+			name = name .. icon2
+		end
+		
+		if imgui.Button(name, imgui.ImVec2(sizeBtn, 18)) then
+			result = true
+		end
+	imgui.EndGroup()
+	return result
+end
+--typeSortId: 0 = up || 2 = up || other = down
+function functionSortId(typeSortId)
+	if infoHouse~= nil then
+		sortIdArray(infoHouse, typeSortId)
+	end
+	if infoBusiness ~= nil then
+		sortIdArray(infoBusiness, typeSortId)
+	end
+	if typeSortId == 0 or typeSortId == 2 then
+		sortId = 1
+	else 
+		sortId = 2
+	end
+	sortTime = 0
+	sortCost = 0
+	
+end
+
+function sortIdArray(array, typeSortId)
+	table.sort(array, function(a, b)
+			if typeSortId == 0 or typeSortId == 2 then
+				return a.id < b.id
+			end
+			
+			return a.id > b.id
+			
+		end)
+end
+
+function functionSortTime(typeSortTime)
+	if infoHouse~= nil then
+		sortTimeArray(infoHouse, typeSortTime)
+	end
+	
+	if infoBusiness~= nil then
+		sortTimeArray(infoBusiness, typeSortTime)
+	end
+	
+	if typeSortTime == 0 or typeSortTime == 2 then
+		sortTime = 1
+	else 
+		sortTime = 2
+	end
+	sortId = 0
+	sortCost = 0
+end
+
+--ChatGPT solo <3
+function sortTimeArray(array, typeSortTime)
+	table.sort(array, function(a, b)
+		local a_hours, a_minutes, a_seconds = a.timeToEnd:match("(%d+):(%d+):(%d+)")
+		local b_hours, b_minutes, b_seconds = b.timeToEnd:match("(%d+):(%d+):(%d+)")
+
+		if not a_hours then
+			a_hours = 0
+		end
+		if not b_hours then
+			b_hours = 0
+		end
+		if not a_minutes then
+			a_minutes, a_seconds = a.timeToEnd:match("(%d+):(%d+)")
+		end
+		if not b_minutes then
+			b_minutes, b_seconds = b.timeToEnd:match("(%d+):(%d+)")
+		end
+		
+		
+		a_hours, a_minutes, a_seconds = tonumber(a_hours), tonumber(a_minutes), tonumber(a_seconds)
+		b_hours, b_minutes, b_seconds = tonumber(b_hours), tonumber(b_minutes), tonumber(b_seconds)
+		
+		if a_hours ~= b_hours then
+			if typeSortTime == 1 then
+				return a_hours > b_hours
+			else
+				return a_hours < b_hours
+			end
+		elseif a_minutes ~= b_minutes then
+			if typeSortTime == 1 then
+				return a_minutes > b_minutes
+			else
+				return a_minutes < b_minutes
+			end
+		else
+			if typeSortTime == 1 then
+				return a_seconds > b_seconds
+			else
+				return a_seconds < b_seconds
+			end
+		end
+	end)
+end
+
+
+function functionSortCost(typeSortCost)
+	if infoHouse~= nil then
+		sortCostArray(infoHouse, typeSortCost)
+	end
+	if infoBusiness ~= nil then
+		sortCostArray(infoBusiness, typeSortCost)
+	end
+	if typeSortCost == 0 or typeSortCost == 2 then
+		sortCost = 1
+	else 
+		sortCost = 2
+	end
+	sortTime = 0
+	sortId = 0
+end
+
+function sortCostArray(array, typeSortCost)
+	table.sort(array, function(a, b)
+		local a_cost, b_cost = tonumber(a.currentCost), tonumber(b.currentCost)
+		if typeSortCost == 0 or typeSortCost == 2 then
+			return a_cost < b_cost
+		end
+		
+		return a_cost > b_cost
+	
+	end)
+end
